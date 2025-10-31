@@ -5,12 +5,12 @@
     justify-content: center;
     align-items: center;
 
-    .u-map__wrapper {
+    .c-map__wrapper {
         overflow: hidden;
         position: relative;
     }
 
-    .u-map__inner {
+    .c-map__inner {
         display: inline-block;
         position: absolute;
         border: 1px solid rgb(238, 238, 238);
@@ -20,14 +20,14 @@
         height: 100%;
     }
 
-    .u-map-img {
+    .c-map-img {
         display: block;
         width: 100%;
         height: 100%;
         z-index: 1;
     }
 
-    .u-map-title__wrapper {
+    .c-map-title__wrapper {
         z-index: 2;
         position: absolute;
 
@@ -36,7 +36,7 @@
         display: flex;
         justify-content: center;
 
-        .u-map-title {
+        .c-map-title {
             user-select: text;
             color: #efe;
             font-weight: bold;
@@ -45,11 +45,11 @@
         }
     }
 
-    .u-map-point__wrapper {
+    .c-map-point__wrapper {
         z-index: 3;
         position: absolute;
 
-        .u-map-point {
+        .c-map-point {
             display: block;
             width: 10px;
             height: 10px;
@@ -64,8 +64,8 @@
     }
 }
 
-.u-map-point__popover {
-    .u-map-title {
+.c-map-point__popover {
+    .c-map-title {
         font-weight: bold;
         color: #aaa;
     }

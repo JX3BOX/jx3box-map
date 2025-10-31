@@ -1,25 +1,25 @@
 <template>
     <div ref="component" class="c-map">
-        <div ref="wrapper" class="u-map__wrapper" :style="wrapperSize">
-            <div class="u-map__inner" :style="innerStyle">
-                <img refs="img" class="u-map-img" :src="mapImg" draggable="false" />
-                <div class="u-map-title__wrapper" v-if="overview">
+        <div ref="wrapper" class="c-map__wrapper" :style="wrapperSize">
+            <div class="c-map__inner" :style="innerStyle">
+                <img refs="img" class="c-map-img" :src="mapImg" draggable="false" />
+                <div class="c-map-title__wrapper" v-if="overview">
                     <slot name="title" v-bind:title="mapName">
-                        <div class="u-map-title">{{ mapName }}</div>
+                        <div class="c-map-title">{{ mapName }}</div>
                     </slot>
                 </div>
                 <template v-for="(i, k) in datas">
-                    <div class="u-map-point__wrapper" :style="pointStyle(i)" :key="k" :data-index="k">
+                    <div class="c-map-point__wrapper" :style="pointStyle(i)" :key="k" :data-index="k">
                         <slot name="point" v-bind:data="i">
-                            <el-popover popper-class="u-map-point__popover" placement="top" width="200" trigger="hover">
+                            <el-popover popper-class="c-map-point__popover" placement="top" width="200" trigger="hover">
                                 <slot name="popover" v-bind:data="i">
                                     <div>
-                                        <div v-if="!overview" class="u-map-title">{{ mapName }}</div>
+                                        <div v-if="!overview" class="c-map-title">{{ mapName }}</div>
                                         <div>{{ i.title }}</div>
                                         <div v-html="i.content"></div>
                                     </div>
                                 </slot>
-                                <span slot="reference" class="u-map-point"> </span>
+                                <span slot="reference" class="c-map-point"> </span>
                             </el-popover>
                         </slot>
                     </div>
@@ -70,6 +70,10 @@ export default {
             type: Boolean,
             default: true,
         },
+        centerPoint: {
+            type: Object,
+            default: null,
+        },
     },
     data: () => ({
         outerWidth: 0,
@@ -96,6 +100,9 @@ export default {
         },
         // 中心点
         focusPoint() {
+            if(this.centerPoint) {
+                return this.centerPoint;
+            }
             if (this.focus != undefined) {
                 return this.datas[this.focus];
             } else {
@@ -248,8 +255,8 @@ export default {
             let store = {};
             const targetIsPoint = (e) => {
                 let { target } = e;
-                while (!target.classList.contains("u-map__wrapper")) {
-                    if (target.classList.contains("u-map-point__wrapper")) {
+                while (!target.classList.contains("c-map__wrapper")) {
+                    if (target.classList.contains("c-map-point__wrapper")) {
                         store.pointIndex = Number(target.dataset["index"]);
                         return true;
                     }
