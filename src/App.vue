@@ -1,7 +1,7 @@
 <template>
     <div id="app">
         <jx3box-map
-            :map-id="8"
+            :map-id="713"
             :datas="datas"
             :overview="false"
             :map-draggable="true"
@@ -9,6 +9,7 @@
             @map-move="mapMoveHandle"
             @point-move="pointMoveHandle"
             @map-click="mapClickHandle"
+            :lock-sub-id="1"
         >
         </jx3box-map>
     </div>

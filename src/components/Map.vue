@@ -74,6 +74,10 @@ export default {
             type: Object,
             default: null,
         },
+        lockSubId: {
+            type: Number,
+            default: -1,
+        },
     },
     data: () => ({
         outerWidth: 0,
@@ -100,7 +104,7 @@ export default {
         },
         // 中心点
         focusPoint() {
-            if(this.centerPoint) {
+            if (this.centerPoint) {
                 return this.centerPoint;
             }
             if (this.focus != undefined) {
@@ -129,6 +133,7 @@ export default {
         subId() {
             let scales = this.mapScales[this.mapId];
             if (!scales || Object.keys(scales) <= 1) return 0;
+            if (this.lockSubId != -1) return this.lockSubId;
             let _sub = 0;
             let _subScale = 0;
             for (let sub in scales) {
