@@ -248,8 +248,11 @@ export default {
         bindUpdateSizeListener() {
             const component = this.$refs["component"];
             if (!component) return;
+            const resizeObserver = new ResizeObserver(() => {
+                this.updateSize();
+            });
+            resizeObserver.observe(component);
             this.updateSize();
-            component.addEventListener("resize", this.updateSize);
         },
         // 拖拽事件处理
         bindDraggerListener() {
