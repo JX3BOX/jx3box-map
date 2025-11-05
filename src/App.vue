@@ -9,7 +9,7 @@
             @map-move="mapMoveHandle"
             @point-move="pointMoveHandle"
             @map-click="mapClickHandle"
-            :lock-sub-id="1"
+            :lock-sub-id="0"
         >
         </jx3box-map>
     </div>
@@ -64,8 +64,13 @@ export default {
     display: flex;
     justify-content: center;
     align-items: center;
-    width: 900px;
-    height: 900px;
+    width: 100vw;
+    height: 100vh;
+}
+
+body {
+    height: 100vh;
+    width: 100vw;
 }
 
 .aaa11212 {

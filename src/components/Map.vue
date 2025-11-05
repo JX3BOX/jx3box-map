@@ -2,7 +2,7 @@
     <div ref="component" class="c-map">
         <div ref="wrapper" class="c-map__wrapper" :style="wrapperSize">
             <div class="c-map__inner" :style="innerStyle">
-                <img refs="img" class="c-map-img" :src="mapImg" draggable="false" />
+                <img refs="img" class="c-map-img" :src="mapImg" draggable="false" :style="imgStyle" />
                 <div class="c-map-title__wrapper" v-if="overview">
                     <slot name="title" v-bind:title="mapName">
                         <div class="c-map-title">{{ mapName }}</div>
@@ -86,6 +86,9 @@ export default {
         innerBottom: 0,
 
         mapScales: {},
+        currentZoomScale: 1,
+        minZoomScale: 0.5,
+        maxZoomScale: 3,
     }),
     computed: {
         // 内层容器宽高
@@ -122,11 +125,17 @@ export default {
             if (this.overview) return style;
 
             // 边界条件处理
-            const { left, bottom } = this.offsetLimit(this.innerLeft, this.innerBottom);
+            const { left, bottom } = this.innerOffsetLimit(this.innerLeft, this.innerBottom);
             return {
                 ...style,
                 left: left + "px",
                 bottom: bottom + "px",
+            };
+        },
+        imgStyle() {
+            return {
+                transform: `scale(${this.currentZoomScale})`,
+                transformOrigin: "left bottom",
             };
         },
         // 地图ID、名称、尺寸、图片等
@@ -165,6 +174,7 @@ export default {
         this.$nextTick(function () {
             this.bindUpdateSizeListener();
             this.bindDraggerListener();
+            this.bindScaleListener();
         });
     },
     beforeDestroy() {
@@ -175,8 +185,9 @@ export default {
         pointPosition(item) {
             const scale = this.mapScale;
             if (!scale) return { left: 0, bottom: 0 };
-            const Width = scale.Width / scale.Scale;
-            const Height = scale.Height / scale.Scale;
+            const finalScale = this.currentZoomScale * scale.Scale;
+            const Width = scale.Width / finalScale;
+            const Height = scale.Height / finalScale;
             const left = ((item.x - scale.StartX) / Width) * this.innerWidth;
             const bottom = ((item.y - scale.StartY) / Height) * this.innerHeight;
             return {
@@ -188,8 +199,9 @@ export default {
         gamePosition(left, bottom) {
             const scale = this.mapScale;
             if (!scale) return { x: 0, y: 0 };
-            const Width = scale.Width / scale.Scale;
-            const Height = scale.Height / scale.Scale;
+            const finalScale = this.currentZoomScale * scale.Scale;
+            const Width = scale.Width / finalScale;
+            const Height = scale.Height / finalScale;
             const x = (left / this.innerWidth) * Width + scale.StartX;
             const y = (bottom / this.innerHeight) * Height + scale.StartY;
             return {
@@ -254,6 +266,21 @@ export default {
             resizeObserver.observe(component);
             this.updateSize();
         },
+        bindScaleListener() {
+            const wrapper = this.$refs["wrapper"];
+            if (!wrapper) return;
+            wrapper.addEventListener("wheel", (e) => {
+                e.preventDefault();
+                const { deltaY } = e;
+                let scale = this.currentZoomScale;
+                if (deltaY < 0) {
+                    scale = Math.min(scale * 1.05, this.maxZoomScale);
+                } else {
+                    scale = Math.max(scale * 0.95, this.minZoomScale);
+                }
+                this.currentZoomScale = scale;
+            });
+        },
         // 拖拽事件处理
         bindDraggerListener() {
             if (!this.mapDraggable && !this.pointDraggable) return;
@@ -273,27 +300,33 @@ export default {
                 return false;
             };
             const mapMoveHandler = (e) => {
+                e.preventDefault();
+
                 const { clientX, clientY } = e;
                 store.dx = clientX - store.x;
                 store.dy = store.y - clientY;
-                const { left, bottom } = this.offsetLimit(store.px + store.dx, store.py + store.dy);
+                const { left, bottom } = this.innerOffsetLimit(store.px + store.dx, store.py + store.dy);
 
                 this.innerLeft = left;
                 this.innerBottom = bottom;
             };
             const pointMoveHandler = (e) => {
-                const { clientX, clientY } = e;
+                e.preventDefault();
+                const { clientX, clientY } = e.type === "touchmove" ? e.touches[0] : e;
                 const point = this.datas[store.pointIndex];
                 const scale = this.mapScale;
-                store.dx = (clientX - store.x) / scale.Scale;
-                store.dy = (store.y - clientY) / scale.Scale;
+                const finalScale = this.currentZoomScale * scale.Scale;
+                store.dx = (clientX - store.x) / finalScale;
+                store.dy = (store.y - clientY) / finalScale;
                 const { x, y } = this.positionLimit(store.px + store.dx, store.py + store.dy);
                 point.x = x;
                 point.y = y;
             };
             const clickHandler = (e) => {
+                e.preventDefault();
+                const { clientX, clientY } = e.type === "touchmove" ? e.touches[0] : e;
+
                 store = {};
-                const { clientX, clientY } = e;
                 store.x = clientX;
                 store.y = clientY;
                 if (targetIsPoint(e)) {
@@ -331,21 +364,22 @@ export default {
             };
             wrapper.addEventListener("mousedown", clickHandler);
         },
-        offsetLimit(left, bottom) {
-            const maxLeft = 0;
-            const minLeft = this.outerWidth - this.innerWidth;
-            const maxBottom = 0;
-            const minBottom = this.outerHeight - this.innerHeight;
+        innerOffsetLimit(left, bottom) {
+            const maxLeft = 40;
+            const minLeft = this.outerWidth - this.innerWidth * this.currentZoomScale - 40;
+            const maxBottom = 40;
+            const minBottom = this.outerHeight - this.innerHeight * this.currentZoomScale - 40;
             return {
                 left: Math.max(Math.min(left, maxLeft), minLeft),
                 bottom: Math.max(Math.min(bottom, maxBottom), minBottom),
             };
         },
         positionLimit(x, y) {
+            const finalScale = this.currentZoomScale * this.mapScale.Scale;
             const minX = this.mapScale.StartX;
-            const maxX = this.mapScale.StartX + this.mapScale.Width / this.mapScale.Scale - 1024;
+            const maxX = this.mapScale.StartX + this.mapScale.Width / finalScale - 1024;
             const minY = this.mapScale.StartY;
-            const maxY = this.mapScale.StartY + this.mapScale.Height / this.mapScale.Scale - 1024;
+            const maxY = this.mapScale.StartY + this.mapScale.Height / finalScale - 1024;
             return {
                 x: Math.max(Math.min(x, maxX), minX),
                 y: Math.max(Math.min(y, maxY), minY),
