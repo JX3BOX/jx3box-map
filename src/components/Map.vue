@@ -8,8 +8,8 @@
                         <div class="c-map-title">{{ mapName }}</div>
                     </slot>
                 </div>
-                <template v-for="(i, k) in datas">
-                    <div class="c-map-point__wrapper" :style="pointStyle(i)" :key="k" :data-index="k">
+                <template v-for="(i, k) in datas" :key="k">
+                    <div class="c-map-point__wrapper" :style="pointStyle(i)" :data-index="k">
                         <slot name="point" v-bind:data="i">
                             <el-popover popper-class="c-map-point__popover" placement="top" width="200" trigger="hover">
                                 <slot name="popover" v-bind:data="i">
