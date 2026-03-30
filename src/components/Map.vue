@@ -2,28 +2,34 @@
     <div ref="component" class="c-map">
         <div ref="wrapper" class="c-map__wrapper" :style="wrapperSize">
             <div class="c-map__inner" :style="innerStyle">
-                <img refs="img" class="c-map-img" :src="mapImg" draggable="false" :style="imgStyle" />
+                <img ref="img" class="c-map-img" :src="mapImg" draggable="false" :style="imgStyle" />
                 <div class="c-map-title__wrapper" v-if="overview">
                     <slot name="title" v-bind:title="mapName">
                         <div class="c-map-title">{{ mapName }}</div>
                     </slot>
                 </div>
-                <template v-for="(i, k) in datas" :key="k">
-                    <div class="c-map-point__wrapper" :style="pointStyle(i)" :data-index="k">
-                        <slot name="point" v-bind:data="i">
-                            <el-popover popper-class="c-map-point__popover" placement="top" width="200" trigger="hover">
-                                <slot name="popover" v-bind:data="i">
-                                    <div>
-                                        <div v-if="!overview" class="c-map-title">{{ mapName }}</div>
-                                        <div>{{ i.title }}</div>
-                                        <div v-html="i.content"></div>
-                                    </div>
-                                </slot>
-                                <span slot="reference" class="c-map-point"> </span>
-                            </el-popover>
-                        </slot>
-                    </div>
-                </template>
+                <div
+                    v-for="(i, k) in datas"
+                    :key="k"
+                    class="c-map-point__wrapper"
+                    :style="pointStyle(i)"
+                    :data-index="k"
+                >
+                    <slot name="point" v-bind:data="i">
+                        <el-popover popper-class="c-map-point__popover" placement="top" width="200" trigger="hover">
+                            <slot name="popover" v-bind:data="i">
+                                <div>
+                                    <div v-if="!overview" class="c-map-title">{{ mapName }}</div>
+                                    <div>{{ i.title }}</div>
+                                    <div v-html="i.content"></div>
+                                </div>
+                            </slot>
+                            <template #reference>
+                                <span class="c-map-point"> </span>
+                            </template>
+                        </el-popover>
+                    </slot>
+                </div>
             </div>
         </div>
     </div>
@@ -35,6 +41,7 @@ import { getMapScales } from "../service/data";
 
 export default {
     name: "Jx3boxMap",
+    emits: ["resize", "map-move", "point-move"],
     props: {
         // 地图ID
         mapId: {
@@ -89,6 +96,12 @@ export default {
         currentZoomScale: 1,
         minZoomScale: 0.5,
         maxZoomScale: 3,
+
+        resizeObserver: null,
+        wrapperWheelHandler: null,
+        wrapperMouseDownHandler: null,
+        documentMouseMoveHandler: null,
+        documentMouseUpHandler: null,
     }),
     computed: {
         // 内层容器宽高
@@ -177,7 +190,23 @@ export default {
             this.bindScaleListener();
         });
     },
-    beforeDestroy() {
+    beforeUnmount() {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
+
+        const wrapper = this.$refs["wrapper"];
+        if (wrapper && this.wrapperWheelHandler) {
+            wrapper.removeEventListener("wheel", this.wrapperWheelHandler);
+        }
+        if (wrapper && this.wrapperMouseDownHandler) {
+            wrapper.removeEventListener("mousedown", this.wrapperMouseDownHandler);
+        }
+        if (this.documentMouseMoveHandler) {
+            document.removeEventListener("mousemove", this.documentMouseMoveHandler);
+        }
+        if (this.documentMouseUpHandler) {
+            document.removeEventListener("mouseup", this.documentMouseUpHandler);
+        }
         window.removeEventListener("resize", this.updateSize);
     },
     methods: {
@@ -260,16 +289,17 @@ export default {
         bindUpdateSizeListener() {
             const component = this.$refs["component"];
             if (!component) return;
-            const resizeObserver = new ResizeObserver(() => {
+            this.resizeObserver?.disconnect();
+            this.resizeObserver = new ResizeObserver(() => {
                 this.updateSize();
             });
-            resizeObserver.observe(component);
+            this.resizeObserver.observe(component);
             this.updateSize();
         },
         bindScaleListener() {
             const wrapper = this.$refs["wrapper"];
             if (!wrapper) return;
-            wrapper.addEventListener("wheel", (e) => {
+            this.wrapperWheelHandler = (e) => {
                 e.preventDefault();
                 const { deltaY } = e;
                 let scale = this.currentZoomScale;
@@ -279,7 +309,8 @@ export default {
                     scale = Math.max(scale * 0.95, this.minZoomScale);
                 }
                 this.currentZoomScale = scale;
-            });
+            };
+            wrapper.addEventListener("wheel", this.wrapperWheelHandler);
         },
         // 拖拽事件处理
         bindDraggerListener() {
@@ -322,7 +353,25 @@ export default {
                 point.x = x;
                 point.y = y;
             };
-            const clickHandler = (e) => {
+            this.documentMouseMoveHandler = (e) => {
+                if (store.type === "map-move") {
+                    mapMoveHandler(e);
+                } else if (store.type === "point-move") {
+                    pointMoveHandler(e);
+                }
+            };
+            this.documentMouseUpHandler = () => {
+                document.removeEventListener("mousemove", this.documentMouseMoveHandler);
+                document.removeEventListener("mouseup", this.documentMouseUpHandler);
+
+                if (!store.dx && !store.dy) return;
+                this.$emit(store.type, store);
+
+                if (this.mapFollow && store.type == "point-move") {
+                    this.initInnerOffset(store.point);
+                }
+            };
+            this.wrapperMouseDownHandler = (e) => {
                 e.preventDefault();
                 const { clientX, clientY } = e.type === "touchmove" ? e.touches[0] : e;
 
@@ -337,8 +386,8 @@ export default {
                     store.px = store.point.x;
                     store.py = store.point.y;
 
-                    document.addEventListener("mousemove", pointMoveHandler);
-                    document.addEventListener("mouseup", removeListener);
+                    document.addEventListener("mousemove", this.documentMouseMoveHandler);
+                    document.addEventListener("mouseup", this.documentMouseUpHandler);
                 } else {
                     // 拖动地图
                     if (!this.mapDraggable) return;
@@ -346,23 +395,11 @@ export default {
                     store.px = this.innerLeft;
                     store.py = this.innerBottom;
 
-                    document.addEventListener("mousemove", mapMoveHandler);
-                    document.addEventListener("mouseup", removeListener);
+                    document.addEventListener("mousemove", this.documentMouseMoveHandler);
+                    document.addEventListener("mouseup", this.documentMouseUpHandler);
                 }
             };
-            const removeListener = () => {
-                document.removeEventListener("mousemove", mapMoveHandler);
-                document.removeEventListener("mousemove", pointMoveHandler);
-                document.removeEventListener("mouseup", removeListener);
-
-                if (!store.dx && !store.dy) return;
-                this.$emit(store.type, store);
-
-                if (this.mapFollow && store.type == "point-move") {
-                    this.initInnerOffset(store.point);
-                }
-            };
-            wrapper.addEventListener("mousedown", clickHandler);
+            wrapper.addEventListener("mousedown", this.wrapperMouseDownHandler);
         },
         innerOffsetLimit(left, bottom) {
             const maxLeft = 40;
@@ -389,6 +426,6 @@ export default {
 };
 </script>
 
-<style lang="less" scoped>
+<style lang="less">
 @import "../assets/map.less";
 </style>
