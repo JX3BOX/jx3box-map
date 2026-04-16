@@ -1,6 +1,6 @@
 {
     "name": "@jx3box/jx3box-map",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "description": "JX3BOX Game Map",
     "main": "index.js",
     "files": [
