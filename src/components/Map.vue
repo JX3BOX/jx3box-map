@@ -2,7 +2,29 @@
     <div ref="component" class="c-map">
         <div ref="wrapper" class="c-map__wrapper" :style="wrapperSize">
             <div class="c-map__inner" :style="innerStyle">
-                <img ref="img" class="c-map-img" :src="mapImg" draggable="false" :style="imgStyle" />
+                <!-- 单张图片 -->
+                <template v-if="mapImg.length < 2">
+                    <img ref="img" class="c-map-img" :src="mapImg[0]" draggable="false" :style="imgStyle" />
+                </template>
+                <!-- 多张图片 carousel -->
+                <el-carousel
+                    v-else
+                    ref="carouselRef"
+                    class="carousel-always-arrow"
+                    indicator-position="none"
+                    :height="innerHeight + 'px'"
+                    :style="{ width: innerWidth + 'px' }"
+                    :autoplay="false"
+                    @change="onCarouselChange"
+                >
+                    <el-carousel-item v-for="(item, index) in mapImg" :key="index">
+                        <img ref="img" class="c-map-img" :src="item" draggable="false" :style="imgStyle" />
+                    </el-carousel-item>
+                </el-carousel>
+
+                <!-- 右下角页码 -->
+                <div v-if="mapImg.length >= 2" class="carousel-page">{{ currentIndex + 1 }} / {{ mapImg.length }}</div>
+
                 <div class="c-map-title__wrapper" v-if="overview">
                     <slot name="title" v-bind:title="mapName">
                         <div class="c-map-title">{{ mapName }}</div>
@@ -37,7 +59,7 @@
 
 <script>
 import jx3boxData from "@jx3box/jx3box-common/data/jx3box.json";
-import { getMapScales } from "../service/data";
+import { getMapScales, getMapTree } from "../service/data";
 
 export default {
     name: "Jx3boxMap",
@@ -93,6 +115,8 @@ export default {
         innerBottom: 0,
 
         mapScales: {},
+        mapTree: {},
+        currentIndex: 0,
         currentZoomScale: 1,
         minZoomScale: 0.5,
         maxZoomScale: 3,
@@ -176,14 +200,22 @@ export default {
             return this.mapScales[this.mapId]?.[this.subId]?.Name;
         },
         mapScale() {
+            console.log(this.mapScales[this.mapId]?.[this.subId]);
             return this.mapScales[this.mapId]?.[this.subId];
         },
         mapImg() {
-            return `${jx3boxData.__imgPath}map/maps/map_${this.mapId}_${this.subId}.png`;
+            const list = this.mapTree[this.mapId] || [0];
+            let imgs = [];
+            list.forEach((item) => {
+                imgs.push(`${jx3boxData.__imgPath}map/maps/map_${this.mapId}_${item}.png`);
+            });
+            console.log(this.subId);
+            return imgs;
         },
     },
     mounted() {
         this.fetchMapScales();
+        this.fetchMapTree();
         this.$nextTick(function () {
             this.bindUpdateSizeListener();
             this.bindDraggerListener();
@@ -273,6 +305,12 @@ export default {
             getMapScales().then((data) => {
                 this.mapScales = data;
                 this.initInnerOffset(this.focusPoint);
+            });
+        },
+        // 获取多图片
+        fetchMapTree() {
+            getMapTree().then((data) => {
+                this.mapTree = data;
             });
         },
         // 自适应组件尺寸
@@ -421,6 +459,9 @@ export default {
                 x: Math.max(Math.min(x, maxX), minX),
                 y: Math.max(Math.min(y, maxY), minY),
             };
+        },
+        onCarouselChange(index) {
+            this.currentIndex = index;
         },
     },
 };
