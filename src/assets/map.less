@@ -62,6 +62,64 @@
             }
         }
     }
+
+    .c-map-toolbar {
+        position: absolute;
+        z-index: 4;
+        top: 16px;
+        left: 50%;
+        display: flex;
+        align-items: center;
+        min-width: 120px;
+        max-width: calc(100% - 32px);
+        min-height: 34px;
+        padding: 4px 8px;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.55);
+        border-radius: 4px;
+        transform: translateX(-50%);
+        user-select: none;
+        box-sizing: border-box;
+    }
+
+    .c-map-toolbar__content {
+        min-width: 0;
+        flex: 1;
+        text-align: center;
+    }
+
+    .c-map-toolbar__title {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: bold;
+        line-height: 18px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .c-map-toolbar__meta {
+        font-size: 11px;
+        line-height: 14px;
+        opacity: 0.8;
+    }
+
+    .c-map-toolbar__switch {
+        flex: 0 0 24px;
+        width: 24px;
+        height: 28px;
+        padding: 0;
+        color: #fff;
+        font-size: 16px;
+        line-height: 28px;
+        text-align: center;
+        background: transparent;
+        border: 0;
+        cursor: pointer;
+    }
+
+    .c-map-toolbar__switch:hover {
+        background: rgba(255, 255, 255, 0.14);
+    }
 }
 
 .c-map-point__popover {

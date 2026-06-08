@@ -2,30 +2,8 @@
     <div ref="component" class="c-map">
         <div ref="wrapper" class="c-map__wrapper" :style="wrapperSize">
             <div class="c-map__inner" :style="innerStyle">
-                <!-- 单张图片 -->
-                <template v-if="mapImg.length < 2">
-                    <img ref="img" class="c-map-img" :src="mapImg[0]" draggable="false" :style="imgStyle" />
-                </template>
-                <!-- 多张图片 carousel -->
-                <el-carousel
-                    v-else
-                    ref="carouselRef"
-                    class="carousel-always-arrow"
-                    indicator-position="none"
-                    :height="innerHeight + 'px'"
-                    :style="{ width: innerWidth + 'px' }"
-                    :autoplay="false"
-                    @change="onCarouselChange"
-                >
-                    <el-carousel-item v-for="(item, index) in mapImg" :key="index">
-                        <img ref="img" class="c-map-img" :src="item" draggable="false" :style="imgStyle" />
-                    </el-carousel-item>
-                </el-carousel>
-
-                <!-- 右下角页码 -->
-                <div v-if="mapImg.length >= 2" class="carousel-page">{{ currentIndex + 1 }} / {{ mapImg.length }}</div>
-
-                <div class="c-map-title__wrapper" v-if="overview">
+                <img ref="img" class="c-map-img" :src="mapImg" draggable="false" :style="imgStyle" />
+                <div class="c-map-title__wrapper" v-if="overview && !showToolbar">
                     <slot name="title" v-bind:title="mapName">
                         <div class="c-map-title">{{ mapName }}</div>
                     </slot>
@@ -53,13 +31,25 @@
                     </slot>
                 </div>
             </div>
+            <div v-if="showToolbar" class="c-map-toolbar" @mousedown.stop>
+                <button v-if="showSubSwitch" class="c-map-toolbar__switch" type="button" @click.stop="switchSubMap(-1)">
+                    &lt;
+                </button>
+                <div class="c-map-toolbar__content">
+                    <div class="c-map-toolbar__title">{{ currentSubName }}</div>
+                    <div v-if="hasSubMaps" class="c-map-toolbar__meta">{{ currentSubIndex + 1 }} / {{ subMapTotal }}</div>
+                </div>
+                <button v-if="showSubSwitch" class="c-map-toolbar__switch" type="button" @click.stop="switchSubMap(1)">
+                    &gt;
+                </button>
+            </div>
         </div>
     </div>
 </template>
 
 <script>
 import jx3boxData from "@jx3box/jx3box-common/data/jx3box.json";
-import { getMapScales, getMapTree } from "../service/data";
+import { getMapScales } from "../service/data";
 
 export default {
     name: "Jx3boxMap",
@@ -107,6 +97,14 @@ export default {
             type: Number,
             default: -1,
         },
+        showToolbar: {
+            type: Boolean,
+            default: false,
+        },
+        allowSwitchSub: {
+            type: Boolean,
+            default: false,
+        },
     },
     data: () => ({
         outerWidth: 0,
@@ -115,8 +113,7 @@ export default {
         innerBottom: 0,
 
         mapScales: {},
-        mapTree: {},
-        currentIndex: 0,
+        selectedSubId: null,
         currentZoomScale: 1,
         minZoomScale: 0.5,
         maxZoomScale: 3,
@@ -176,10 +173,34 @@ export default {
             };
         },
         // 地图ID、名称、尺寸、图片等
+        subMaps() {
+            const scales = this.mapScales[this.mapId];
+            if (!scales) return [0];
+            return Object.keys(scales)
+                .map((sub) => Number(sub))
+                .sort((a, b) => a - b);
+        },
+        subMapTotal() {
+            return this.subMaps.length;
+        },
+        hasSubMaps() {
+            return this.subMapTotal > 1;
+        },
+        currentSubIndex() {
+            const index = this.subMaps.indexOf(Number(this.subId));
+            return index === -1 ? 0 : index;
+        },
+        currentSubName() {
+            return this.mapName || "";
+        },
+        showSubSwitch() {
+            return this.allowSwitchSub && this.hasSubMaps && this.lockSubId == -1;
+        },
         subId() {
             let scales = this.mapScales[this.mapId];
-            if (!scales || Object.keys(scales) <= 1) return 0;
+            if (!scales || this.subMaps.length <= 1) return 0;
             if (this.lockSubId != -1) return this.lockSubId;
+            if (this.selectedSubId != null && scales[this.selectedSubId]) return this.selectedSubId;
             let _sub = 0;
             let _subScale = 0;
             for (let sub in scales) {
@@ -200,27 +221,27 @@ export default {
             return this.mapScales[this.mapId]?.[this.subId]?.Name;
         },
         mapScale() {
-            console.log(this.mapScales[this.mapId]?.[this.subId]);
             return this.mapScales[this.mapId]?.[this.subId];
         },
         mapImg() {
-            const list = this.mapTree[this.mapId] || [0];
-            let imgs = [];
-            list.forEach((item) => {
-                imgs.push(`${jx3boxData.__imgPath}map/maps/map_${this.mapId}_${item}.png`);
-            });
-            console.log(this.subId);
-            return imgs;
+            return `${jx3boxData.__imgPath}map/maps/map_${this.mapId}_${this.subId}.png`;
         },
     },
     mounted() {
         this.fetchMapScales();
-        this.fetchMapTree();
         this.$nextTick(function () {
             this.bindUpdateSizeListener();
             this.bindDraggerListener();
             this.bindScaleListener();
         });
+    },
+    watch: {
+        mapId() {
+            this.selectedSubId = null;
+            this.$nextTick(() => {
+                this.initInnerOffset(this.focusPoint);
+            });
+        },
     },
     beforeUnmount() {
         this.resizeObserver?.disconnect();
@@ -305,12 +326,6 @@ export default {
             getMapScales().then((data) => {
                 this.mapScales = data;
                 this.initInnerOffset(this.focusPoint);
-            });
-        },
-        // 获取多图片
-        fetchMapTree() {
-            getMapTree().then((data) => {
-                this.mapTree = data;
             });
         },
         // 自适应组件尺寸
@@ -460,8 +475,14 @@ export default {
                 y: Math.max(Math.min(y, maxY), minY),
             };
         },
-        onCarouselChange(index) {
-            this.currentIndex = index;
+        switchSubMap(step) {
+            if (!this.showSubSwitch) return;
+            const total = this.subMapTotal;
+            const nextIndex = (this.currentSubIndex + step + total) % total;
+            this.selectedSubId = this.subMaps[nextIndex];
+            this.$nextTick(() => {
+                this.initInnerOffset(this.focusPoint);
+            });
         },
     },
 };

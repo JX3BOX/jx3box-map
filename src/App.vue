@@ -9,7 +9,9 @@
             @map-move="mapMoveHandle"
             @point-move="pointMoveHandle"
             @map-click="mapClickHandle"
-            :lock-sub-id="0"
+            
+            :show-toolbar="true"
+            :allow-switch-sub="true"
         >
         </jx3box-map>
     </div>
