@@ -51,9 +51,27 @@
 import jx3boxData from "@jx3box/jx3box-common/data/jx3box.json";
 import { getMapScales } from "../service/data";
 
+function clamp(value, min, max) {
+    return Math.max(Math.min(value, max), min);
+}
+
+function getTouchDistance(touches) {
+    const [a, b] = touches;
+    if (!a || !b) return 0;
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+function getTouchCenter(touches) {
+    const [a, b] = touches;
+    return {
+        x: (a.clientX + b.clientX) / 2,
+        y: (a.clientY + b.clientY) / 2,
+    };
+}
+
 export default {
     name: "Jx3boxMap",
-    emits: ["resize", "map-move", "point-move"],
+    emits: ["resize", "map-move", "point-move", "sub-switch"],
     props: {
         // 地图ID
         mapId: {
@@ -121,8 +139,12 @@ export default {
         resizeObserver: null,
         wrapperWheelHandler: null,
         wrapperMouseDownHandler: null,
+        wrapperTouchStartHandler: null,
+        wrapperTouchMoveHandler: null,
+        wrapperTouchEndHandler: null,
         documentMouseMoveHandler: null,
         documentMouseUpHandler: null,
+        touchStore: {},
     }),
     computed: {
         // 内层容器宽高
@@ -146,9 +168,8 @@ export default {
             }
             if (this.focus != undefined) {
                 return this.datas[this.focus];
-            } else {
-                return this.datas.find((d) => d.focus) ?? this.datas[0];
             }
+            return this.datas.find((d) => d.focus) ?? null;
         },
         // 内层容器相对外层容器偏移
         innerStyle() {
@@ -232,12 +253,25 @@ export default {
         this.$nextTick(function () {
             this.bindUpdateSizeListener();
             this.bindDraggerListener();
+            this.bindTouchListener();
             this.bindScaleListener();
         });
     },
     watch: {
         mapId() {
             this.selectedSubId = null;
+            this.currentZoomScale = 1;
+            this.$nextTick(() => {
+                this.initInnerOffset(this.focusPoint);
+            });
+        },
+        lockSubId() {
+            this.currentZoomScale = 1;
+            this.$nextTick(() => {
+                this.initInnerOffset(this.focusPoint);
+            });
+        },
+        centerPoint() {
             this.$nextTick(() => {
                 this.initInnerOffset(this.focusPoint);
             });
@@ -253,6 +287,16 @@ export default {
         }
         if (wrapper && this.wrapperMouseDownHandler) {
             wrapper.removeEventListener("mousedown", this.wrapperMouseDownHandler);
+        }
+        if (wrapper && this.wrapperTouchStartHandler) {
+            wrapper.removeEventListener("touchstart", this.wrapperTouchStartHandler);
+        }
+        if (wrapper && this.wrapperTouchMoveHandler) {
+            wrapper.removeEventListener("touchmove", this.wrapperTouchMoveHandler);
+        }
+        if (wrapper && this.wrapperTouchEndHandler) {
+            wrapper.removeEventListener("touchend", this.wrapperTouchEndHandler);
+            wrapper.removeEventListener("touchcancel", this.wrapperTouchEndHandler);
         }
         if (this.documentMouseMoveHandler) {
             document.removeEventListener("mousemove", this.documentMouseMoveHandler);
@@ -311,6 +355,18 @@ export default {
         },
         initInnerOffset(centerPoint) {
             if (this.overview) return { x: 0, y: 0 };
+            if (!this.outerWidth || !this.outerHeight) return { x: 0, y: 0 };
+
+            if (!centerPoint) {
+                const limited = this.innerOffsetLimit(
+                    (this.outerWidth - this.innerWidth * this.currentZoomScale) / 2,
+                    (this.outerHeight - this.innerHeight * this.currentZoomScale) / 2
+                );
+                this.innerLeft = limited.left;
+                this.innerBottom = limited.bottom;
+                return limited;
+            }
+
             // 外层容器的中心点
             const outerCenter = {
                 x: this.outerWidth / 2,
@@ -318,8 +374,10 @@ export default {
             };
             // 要展示的点相对内层容器的偏移
             const positionOffset = this.pointPosition(centerPoint);
-            this.innerLeft = outerCenter.x - positionOffset.left;
-            this.innerBottom = outerCenter.y - positionOffset.bottom;
+            const limited = this.innerOffsetLimit(outerCenter.x - positionOffset.left, outerCenter.y - positionOffset.bottom);
+            this.innerLeft = limited.left;
+            this.innerBottom = limited.bottom;
+            return limited;
         },
         // 获取地图尺寸数据
         fetchMapScales() {
@@ -330,12 +388,17 @@ export default {
         },
         // 自适应组件尺寸
         updateSize() {
+            const prevWidth = this.outerWidth;
+            const prevHeight = this.outerHeight;
             this.outerWidth = this.$refs["component"]?.clientWidth;
             if (!this.outerWidth) return;
             if (this.overview) {
                 this.outerHeight = this.outerWidth / (1024 / 896);
             } else {
                 this.outerHeight = this.$refs["component"]?.clientHeight;
+            }
+            if (prevWidth !== this.outerWidth || prevHeight !== this.outerHeight) {
+                this.initInnerOffset(this.focusPoint);
             }
             this.$emit("resize", [this.outerWidth, this.outerHeight]);
         },
@@ -354,16 +417,102 @@ export default {
             if (!wrapper) return;
             this.wrapperWheelHandler = (e) => {
                 e.preventDefault();
-                const { deltaY } = e;
-                let scale = this.currentZoomScale;
-                if (deltaY < 0) {
-                    scale = Math.min(scale * 1.05, this.maxZoomScale);
-                } else {
-                    scale = Math.max(scale * 0.95, this.minZoomScale);
-                }
-                this.currentZoomScale = scale;
+                const factor = e.deltaY < 0 ? 1.08 : 0.92;
+                this.zoomAt(this.currentZoomScale * factor, e.clientX, e.clientY);
             };
-            wrapper.addEventListener("wheel", this.wrapperWheelHandler);
+            wrapper.addEventListener("wheel", this.wrapperWheelHandler, { passive: false });
+        },
+        zoomAt(scale, clientX, clientY) {
+            const wrapper = this.$refs["wrapper"];
+            if (!wrapper) return;
+
+            const rect = wrapper.getBoundingClientRect();
+            const nextScale = clamp(scale, this.minZoomScale, this.maxZoomScale);
+            const anchorX = clientX - rect.left;
+            const anchorBottom = rect.bottom - clientY;
+            const contentX = (anchorX - this.innerLeft) / this.currentZoomScale;
+            const contentBottom = (anchorBottom - this.innerBottom) / this.currentZoomScale;
+            const limited = this.innerOffsetLimit(
+                anchorX - contentX * nextScale,
+                anchorBottom - contentBottom * nextScale,
+                nextScale
+            );
+
+            this.currentZoomScale = nextScale;
+            this.innerLeft = limited.left;
+            this.innerBottom = limited.bottom;
+        },
+        bindTouchListener() {
+            const wrapper = this.$refs["wrapper"];
+            if (!wrapper) return;
+
+            this.wrapperTouchStartHandler = (e) => {
+                if (!this.mapDraggable && !this.pointDraggable) return;
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    const center = getTouchCenter(e.touches);
+                    this.touchStore = {
+                        type: "pinch",
+                        distance: getTouchDistance(e.touches),
+                        scale: this.currentZoomScale,
+                        centerX: center.x,
+                        centerY: center.y,
+                    };
+                    return;
+                }
+
+                const touch = e.touches[0];
+                if (!touch || !this.mapDraggable) return;
+                this.touchStore = {
+                    type: "map-move",
+                    x: touch.clientX,
+                    y: touch.clientY,
+                    px: this.innerLeft,
+                    py: this.innerBottom,
+                };
+            };
+
+            this.wrapperTouchMoveHandler = (e) => {
+                const store = this.touchStore || {};
+                if (!store.type) return;
+                e.preventDefault();
+
+                if (store.type === "pinch" && e.touches.length >= 2) {
+                    const nextDistance = getTouchDistance(e.touches);
+                    if (!store.distance || !nextDistance) return;
+                    const center = getTouchCenter(e.touches);
+                    this.zoomAt(store.scale * (nextDistance / store.distance), center.x, center.y);
+                    return;
+                }
+
+                const touch = e.touches[0];
+                if (store.type !== "map-move" || !touch) return;
+                const dx = touch.clientX - store.x;
+                const dy = store.y - touch.clientY;
+                const limit = this.innerOffsetLimit(store.px + dx, store.py + dy);
+                this.innerLeft = limit.left;
+                this.innerBottom = limit.bottom;
+            };
+
+            this.wrapperTouchEndHandler = (e) => {
+                if (e.touches.length === 1 && this.touchStore?.type === "pinch") {
+                    const touch = e.touches[0];
+                    this.touchStore = {
+                        type: "map-move",
+                        x: touch.clientX,
+                        y: touch.clientY,
+                        px: this.innerLeft,
+                        py: this.innerBottom,
+                    };
+                    return;
+                }
+                this.touchStore = {};
+            };
+
+            wrapper.addEventListener("touchstart", this.wrapperTouchStartHandler, { passive: false });
+            wrapper.addEventListener("touchmove", this.wrapperTouchMoveHandler, { passive: false });
+            wrapper.addEventListener("touchend", this.wrapperTouchEndHandler);
+            wrapper.addEventListener("touchcancel", this.wrapperTouchEndHandler);
         },
         // 拖拽事件处理
         bindDraggerListener() {
@@ -454,11 +603,11 @@ export default {
             };
             wrapper.addEventListener("mousedown", this.wrapperMouseDownHandler);
         },
-        innerOffsetLimit(left, bottom) {
+        innerOffsetLimit(left, bottom, scale = this.currentZoomScale) {
             const maxLeft = 40;
-            const minLeft = this.outerWidth - this.innerWidth * this.currentZoomScale - 40;
+            const minLeft = this.outerWidth - this.innerWidth * scale - 40;
             const maxBottom = 40;
-            const minBottom = this.outerHeight - this.innerHeight * this.currentZoomScale - 40;
+            const minBottom = this.outerHeight - this.innerHeight * scale - 40;
             return {
                 left: Math.max(Math.min(left, maxLeft), minLeft),
                 bottom: Math.max(Math.min(bottom, maxBottom), minBottom),
@@ -480,6 +629,7 @@ export default {
             const total = this.subMapTotal;
             const nextIndex = (this.currentSubIndex + step + total) % total;
             this.selectedSubId = this.subMaps[nextIndex];
+            this.$emit("sub-switch", this.selectedSubId);
             this.$nextTick(() => {
                 this.initInnerOffset(this.focusPoint);
             });
