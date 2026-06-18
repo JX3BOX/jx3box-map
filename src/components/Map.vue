@@ -123,6 +123,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        autoSwitchSubByPoints: {
+            type: Boolean,
+            default: true,
+        },
     },
     data: () => ({
         outerWidth: 0,
@@ -222,6 +226,7 @@ export default {
             if (!scales || this.subMaps.length <= 1) return 0;
             if (this.lockSubId != -1) return this.lockSubId;
             if (this.selectedSubId != null && scales[this.selectedSubId]) return this.selectedSubId;
+            if (!this.autoSwitchSubByPoints) return 0;
             let _sub = 0;
             let _subScale = 0;
             for (let sub in scales) {
@@ -343,6 +348,7 @@ export default {
             };
         },
         isPointsInRect(rect) {
+            if (!this.datas.length) return false;
             let points = this.datas.map((p) => {
                 return {
                     x: p.x,
