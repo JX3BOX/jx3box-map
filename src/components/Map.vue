@@ -276,7 +276,8 @@ export default {
                 this.initInnerOffset(this.focusPoint);
             });
         },
-        centerPoint() {
+        centerPoint(newVal, oldVal) {
+            if (this.isSamePoint(newVal, oldVal)) return;
             this.$nextTick(() => {
                 this.initInnerOffset(this.focusPoint);
             });
@@ -346,6 +347,11 @@ export default {
                 left: left + "px",
                 bottom: bottom + "px",
             };
+        },
+        isSamePoint(a, b) {
+            if (a === b) return true;
+            if (!a || !b) return false;
+            return a.x === b.x && a.y === b.y && a.z === b.z;
         },
         isPointsInRect(rect) {
             if (!this.datas.length) return false;
