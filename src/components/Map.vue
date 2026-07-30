@@ -1,9 +1,33 @@
 <template>
-    <div ref="component" class="c-map">
+    <div
+        ref="component"
+        class="c-map"
+        :class="rootClasses"
+        role="region"
+        :aria-label="resolvedMapLabel"
+        :aria-busy="isLoading ? 'true' : 'false'"
+    >
         <div ref="wrapper" class="c-map__wrapper" :style="wrapperSize">
-            <div class="c-map__inner" :style="innerStyle">
-                <img ref="img" class="c-map-img" :src="mapImg" draggable="false" :style="imgStyle" />
-                <div class="c-map-title__wrapper" v-if="overview && !showToolbar">
+            <div v-if="loadError" class="c-map-status c-map-status--error" role="alert">
+                <slot name="error" :error="loadError" :retry="retry">
+                    <span>{{ mapT("loadError") }}</span>
+                    <button class="c-map-status__retry" type="button" @click="retry">
+                        {{ mapT("retry") }}
+                    </button>
+                </slot>
+            </div>
+            <div v-show="!loadError" class="c-map__inner" :style="innerStyle">
+                <img
+                    ref="img"
+                    class="c-map-img"
+                    :src="mapImg"
+                    draggable="false"
+                    :style="imgStyle"
+                    :alt="resolvedMapLabel"
+                    @load="handleImageLoad"
+                    @error="handleImageError"
+                />
+                <div class="c-map-title__wrapper" v-if="effectiveOverview && !showToolbar">
                     <slot name="title" v-bind:title="mapName">
                         <div class="c-map-title">{{ mapName }}</div>
                     </slot>
@@ -19,27 +43,46 @@
                         <el-popover popper-class="c-map-point__popover" placement="top" width="200" trigger="hover">
                             <slot name="popover" v-bind:data="i">
                                 <div>
-                                    <div v-if="!overview" class="c-map-title">{{ mapName }}</div>
+                                    <div v-if="!effectiveOverview" class="c-map-title">{{ mapName }}</div>
                                     <div>{{ i.title }}</div>
                                     <div v-html="i.content"></div>
                                 </div>
                             </slot>
                             <template #reference>
-                                <span class="c-map-point"> </span>
+                                <button
+                                    class="c-map-point"
+                                    type="button"
+                                    :aria-label="pointLabel(i)"
+                                    @keydown.stop
+                                ></button>
                             </template>
                         </el-popover>
                     </slot>
                 </div>
             </div>
             <div v-if="showToolbar" class="c-map-toolbar" @mousedown.stop>
-                <button v-if="showSubSwitch" class="c-map-toolbar__switch" type="button" @click.stop="switchSubMap(-1)">
+                <button
+                    v-if="showSubSwitch"
+                    class="c-map-toolbar__switch"
+                    type="button"
+                    :title="mapT('previousSubMap')"
+                    :aria-label="mapT('previousSubMap')"
+                    @click.stop="switchSubMap(-1)"
+                >
                     &lt;
                 </button>
                 <div class="c-map-toolbar__content">
                     <div class="c-map-toolbar__title">{{ currentSubName }}</div>
                     <div v-if="hasSubMaps" class="c-map-toolbar__meta">{{ currentSubIndex + 1 }} / {{ subMapTotal }}</div>
                 </div>
-                <button v-if="showSubSwitch" class="c-map-toolbar__switch" type="button" @click.stop="switchSubMap(1)">
+                <button
+                    v-if="showSubSwitch"
+                    class="c-map-toolbar__switch"
+                    type="button"
+                    :title="mapT('nextSubMap')"
+                    :aria-label="mapT('nextSubMap')"
+                    @click.stop="switchSubMap(1)"
+                >
                     &gt;
                 </button>
             </div>
@@ -50,6 +93,7 @@
 <script>
 import jx3boxData from "@jx3box/jx3box-common/data/jx3box.json";
 import { getMapScales } from "../service/data";
+import { createJx3boxMapTranslator, normalizeJx3boxMapLocale } from "../i18n/messages";
 
 function clamp(value, min, max) {
     return Math.max(Math.min(value, max), min);
@@ -71,7 +115,7 @@ function getTouchCenter(touches) {
 
 export default {
     name: "Jx3boxMap",
-    emits: ["resize", "map-move", "point-move", "sub-switch"],
+    emits: ["resize", "error", "map-move", "point-move", "sub-switch"],
     props: {
         // 地图ID
         mapId: {
@@ -87,6 +131,40 @@ export default {
             type: Boolean,
             default: true,
         },
+        mode: {
+            type: String,
+            default: "",
+            validator: (value) => ["", "overview", "focus", "responsive"].includes(value),
+        },
+        locale: {
+            type: String,
+            default: "",
+        },
+        messages: {
+            type: Object,
+            default: () => ({}),
+        },
+        translator: {
+            type: Function,
+            default: null,
+        },
+        labels: {
+            type: Object,
+            default: () => ({}),
+        },
+        mapLabel: {
+            type: String,
+            default: "",
+        },
+        pointLabelKey: {
+            type: String,
+            default: "title",
+        },
+        aspectRatio: {
+            type: Number,
+            default: 1024 / 896,
+            validator: (value) => value > 0,
+        },
         focus: {
             type: Number,
             default: undefined,
@@ -94,6 +172,11 @@ export default {
         trimBorder: {
             type: Boolean,
             default: false,
+        },
+        trimRatio: {
+            type: Number,
+            default: 0.05,
+            validator: (value) => value >= 0 && value < 0.5,
         },
         mapDraggable: {
             type: Boolean,
@@ -127,6 +210,14 @@ export default {
             type: Boolean,
             default: true,
         },
+        zoomable: {
+            type: Boolean,
+            default: false,
+        },
+        wheelZoom: {
+            type: Boolean,
+            default: false,
+        },
     },
     data: () => ({
         outerWidth: 0,
@@ -139,8 +230,12 @@ export default {
         currentZoomScale: 1,
         minZoomScale: 0.5,
         maxZoomScale: 3,
+        scaleLoading: true,
+        imageLoading: true,
+        loadError: null,
 
         resizeObserver: null,
+        resizeFrame: null,
         wrapperWheelHandler: null,
         wrapperMouseDownHandler: null,
         wrapperTouchStartHandler: null,
@@ -151,12 +246,55 @@ export default {
         touchStore: {},
     }),
     computed: {
+        effectiveOverview() {
+            if (this.mode) return this.mode !== "focus";
+            return this.overview;
+        },
+        canZoom() {
+            // 历史版本中可拖动地图始终支持滚轮/双指缩放，继续保留该交互。
+            return this.zoomable || this.mapDraggable;
+        },
+        normalizedLocale() {
+            const hostLocale = this.$?.appContext?.config?.globalProperties?.$i18n?.locale;
+            const value = hostLocale && typeof hostLocale === "object" ? hostLocale.value : hostLocale;
+            const documentLocale = typeof document === "undefined" ? "" : document.documentElement?.lang;
+            return normalizeJx3boxMapLocale(this.locale || value || documentLocale);
+        },
+        builtInTranslator() {
+            return createJx3boxMapTranslator(this.normalizedLocale, this.messages);
+        },
+        isLoading() {
+            return this.scaleLoading || this.imageLoading;
+        },
+        rootClasses() {
+            return [
+                `c-map--${this.mode || (this.overview ? "overview" : "focus")}`,
+                {
+                    "is-loading": this.isLoading,
+                    "is-error": Boolean(this.loadError),
+                    "is-draggable": this.mapDraggable,
+                    "is-zoomable": this.canZoom,
+                    "is-trimmed": this.trimBorder && this.effectiveOverview,
+                },
+            ];
+        },
+        resolvedMapLabel() {
+            if (this.mapLabel) return this.mapLabel;
+            if (!this.mapName) return this.mapT("unnamedMap");
+            return this.mapT("mapLabel", { name: this.mapName });
+        },
+        trimSize() {
+            return this.trimBorder && this.effectiveOverview ? this.outerWidth * this.trimRatio : 0;
+        },
+        overviewFullHeight() {
+            return this.outerWidth ? this.outerWidth / this.aspectRatio : 0;
+        },
         // 内层容器宽高
         innerWidth() {
-            return this.overview ? this.outerWidth : 1024;
+            return this.effectiveOverview ? this.outerWidth : 1024;
         },
         innerHeight() {
-            return this.overview ? this.outerHeight : 896;
+            return this.effectiveOverview ? this.overviewFullHeight : 896;
         },
         // 容器尺寸
         wrapperSize() {
@@ -181,7 +319,10 @@ export default {
                 width: this.innerWidth + "px",
                 height: this.innerHeight + "px",
             };
-            if (this.overview) return style;
+            if (this.effectiveOverview) {
+                if (this.trimSize) style.bottom = -this.trimSize / 2 + "px";
+                return style;
+            }
 
             // 边界条件处理
             const { left, bottom } = this.innerOffsetLimit(this.innerLeft, this.innerBottom);
@@ -254,7 +395,7 @@ export default {
         },
     },
     mounted() {
-        this.fetchMapScales();
+        this.loadMapScales();
         this.$nextTick(function () {
             this.bindUpdateSizeListener();
             this.bindDraggerListener();
@@ -282,10 +423,34 @@ export default {
                 this.initInnerOffset(this.focusPoint);
             });
         },
+        effectiveOverview() {
+            this.currentZoomScale = 1;
+            this.$nextTick(() => {
+                this.initInnerOffset(this.focusPoint);
+            });
+            this.scheduleSizeUpdate();
+        },
+        aspectRatio() {
+            this.scheduleSizeUpdate();
+        },
+        trimBorder() {
+            this.scheduleSizeUpdate();
+        },
+        trimRatio() {
+            this.scheduleSizeUpdate();
+        },
+        mapImg() {
+            this.imageLoading = true;
+            this.loadError = null;
+        },
     },
     beforeUnmount() {
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
+        if (this.resizeFrame) {
+            cancelAnimationFrame(this.resizeFrame);
+            this.resizeFrame = null;
+        }
 
         const wrapper = this.$refs["wrapper"];
         if (wrapper && this.wrapperWheelHandler) {
@@ -313,6 +478,45 @@ export default {
         window.removeEventListener("resize", this.updateSize);
     },
     methods: {
+        mapT(key, params = {}) {
+            if (this.labels[key]) return this.labels[key];
+            if (this.translator) {
+                const translated = this.translator(key, params, this.normalizedLocale);
+                if (translated) return translated;
+            }
+            return this.builtInTranslator(key, params);
+        },
+        pointLabel(item) {
+            const title = item?.[this.pointLabelKey] || this.mapT("unnamedPoint");
+            return this.mapT("pointLabel", {
+                title,
+                x: item?.x ?? "",
+                y: item?.y ?? "",
+            });
+        },
+        handleImageLoad() {
+            this.imageLoading = false;
+            this.loadError = null;
+        },
+        handleImageError(event) {
+            this.imageLoading = false;
+            this.loadError = new Error(`Failed to load map image: ${this.mapImg}`);
+            this.$emit("error", { type: "image", error: this.loadError, event, src: this.mapImg });
+        },
+        retry() {
+            this.loadError = null;
+            this.scaleLoading = true;
+            this.imageLoading = true;
+            this.loadMapScales();
+            const img = this.$refs.img;
+            if (img) {
+                const src = this.mapImg;
+                img.src = "";
+                this.$nextTick(() => {
+                    img.src = src;
+                });
+            }
+        },
         // 游戏坐标 -> 相对位置
         pointPosition(item) {
             const scale = this.mapScale;
@@ -366,7 +570,7 @@ export default {
             });
         },
         initInnerOffset(centerPoint) {
-            if (this.overview) return { x: 0, y: 0 };
+            if (this.effectiveOverview) return { x: 0, y: 0 };
             if (!this.outerWidth || !this.outerHeight) return { x: 0, y: 0 };
 
             if (!centerPoint) {
@@ -392,34 +596,62 @@ export default {
             return limited;
         },
         // 获取地图尺寸数据
+        loadMapScales() {
+            this.scaleLoading = true;
+            return Promise.resolve()
+                .then(() => this.fetchMapScales())
+                .then(() => {
+                    this.scaleLoading = false;
+                    this.loadError = null;
+                })
+                .catch((error) => {
+                    this.scaleLoading = false;
+                    this.imageLoading = false;
+                    this.loadError = error;
+                    this.$emit("error", { type: "scales", error });
+                });
+        },
         fetchMapScales() {
-            getMapScales().then((data) => {
+            return getMapScales().then((data) => {
                 this.mapScales = data;
                 this.initInnerOffset(this.focusPoint);
+                return data;
             });
         },
         // 自适应组件尺寸
         updateSize() {
             const prevWidth = this.outerWidth;
             const prevHeight = this.outerHeight;
-            this.outerWidth = this.$refs["component"]?.clientWidth;
-            if (!this.outerWidth) return;
-            if (this.overview) {
-                this.outerHeight = this.outerWidth / (1024 / 896);
+            const component = this.$refs["component"];
+            const nextWidth = component?.clientWidth || 0;
+            if (!nextWidth) return;
+            let nextHeight;
+            if (this.effectiveOverview) {
+                nextHeight = Math.max(nextWidth / this.aspectRatio - nextWidth * (this.trimBorder ? this.trimRatio : 0), 0);
             } else {
-                this.outerHeight = this.$refs["component"]?.clientHeight;
+                nextHeight = component?.clientHeight || 0;
             }
+            if (prevWidth === nextWidth && prevHeight === nextHeight) return;
+            this.outerWidth = nextWidth;
+            this.outerHeight = nextHeight;
             if (prevWidth !== this.outerWidth || prevHeight !== this.outerHeight) {
                 this.initInnerOffset(this.focusPoint);
             }
             this.$emit("resize", [this.outerWidth, this.outerHeight]);
+        },
+        scheduleSizeUpdate() {
+            if (this.resizeFrame) return;
+            this.resizeFrame = requestAnimationFrame(() => {
+                this.resizeFrame = null;
+                this.updateSize();
+            });
         },
         bindUpdateSizeListener() {
             const component = this.$refs["component"];
             if (!component) return;
             this.resizeObserver?.disconnect();
             this.resizeObserver = new ResizeObserver(() => {
-                this.updateSize();
+                this.scheduleSizeUpdate();
             });
             this.resizeObserver.observe(component);
             this.updateSize();
@@ -428,6 +660,7 @@ export default {
             const wrapper = this.$refs["wrapper"];
             if (!wrapper) return;
             this.wrapperWheelHandler = (e) => {
+                if (!this.canZoom || (!this.wheelZoom && !this.mapDraggable)) return;
                 e.preventDefault();
                 const factor = e.deltaY < 0 ? 1.08 : 0.92;
                 this.zoomAt(this.currentZoomScale * factor, e.clientX, e.clientY);
@@ -435,6 +668,7 @@ export default {
             wrapper.addEventListener("wheel", this.wrapperWheelHandler, { passive: false });
         },
         zoomAt(scale, clientX, clientY) {
+            if (!this.canZoom) return;
             const wrapper = this.$refs["wrapper"];
             if (!wrapper) return;
 
@@ -459,8 +693,8 @@ export default {
             if (!wrapper) return;
 
             this.wrapperTouchStartHandler = (e) => {
-                if (!this.mapDraggable && !this.pointDraggable) return;
-                if (e.touches.length === 2) {
+                if (!this.mapDraggable && !this.pointDraggable && !this.canZoom) return;
+                if (e.touches.length === 2 && this.canZoom) {
                     e.preventDefault();
                     const center = getTouchCenter(e.touches);
                     this.touchStore = {

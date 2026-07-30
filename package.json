@@ -1,6 +1,6 @@
 {
     "name": "@jx3box/jx3box-map",
-    "version": "1.1.10",
+    "version": "1.1.11",
     "description": "JX3BOX Game Map",
     "main": "index.js",
     "files": [
@@ -11,6 +11,7 @@
         "serve": "vue-cli-service serve",
         "build": "vue-cli-service build",
         "lint": "vue-cli-service lint",
+        "test:i18n": "node scripts/check-i18n.js",
         "update": "npm --registry https://registry.npmjs.org install @jx3box/jx3box-common@latest"
     },
     "dependencies": {

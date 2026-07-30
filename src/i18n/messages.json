@@ -1,0 +1,42 @@
+{
+    "zh-CN": {
+        "mapLabel": "{name}地图",
+        "unnamedMap": "游戏地图",
+        "pointLabel": "{title}，坐标 {x}，{y}",
+        "unnamedPoint": "地图点位",
+        "loadError": "地图加载失败",
+        "retry": "重新加载",
+        "previousSubMap": "上一张地图",
+        "nextSubMap": "下一张地图"
+    },
+    "zh-TW": {
+        "mapLabel": "{name}地圖",
+        "unnamedMap": "遊戲地圖",
+        "pointLabel": "{title}，座標 {x}，{y}",
+        "unnamedPoint": "地圖點位",
+        "loadError": "地圖載入失敗",
+        "retry": "重新載入",
+        "previousSubMap": "上一張地圖",
+        "nextSubMap": "下一張地圖"
+    },
+    "en-US": {
+        "mapLabel": "{name} map",
+        "unnamedMap": "Game map",
+        "pointLabel": "{title}, coordinates {x}, {y}",
+        "unnamedPoint": "Map point",
+        "loadError": "Unable to load the map",
+        "retry": "Try again",
+        "previousSubMap": "Previous map",
+        "nextSubMap": "Next map"
+    },
+    "vi": {
+        "mapLabel": "Bản đồ {name}",
+        "unnamedMap": "Bản đồ trò chơi",
+        "pointLabel": "{title}, tọa độ {x}, {y}",
+        "unnamedPoint": "Điểm trên bản đồ",
+        "loadError": "Không thể tải bản đồ",
+        "retry": "Thử lại",
+        "previousSubMap": "Bản đồ trước",
+        "nextSubMap": "Bản đồ tiếp theo"
+    }
+}

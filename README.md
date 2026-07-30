@@ -5,11 +5,24 @@
 ## QuickStart
 
 ```js
-import Jx3boxMap from '@jx3box/jx3box-map/src/components/Map.vue
+import Jx3boxMap from "@jx3box/jx3box-map";
 ```
 
 ```html
 <jx3box-map :map-id="8" :datas="datas"></jx3box-map>
+```
+
+PVX 风格与响应式总览：
+
+```html
+<jx3box-map
+    :map-id="8"
+    :datas="datas"
+    mode="responsive"
+    locale="zh-CN"
+    :trim-border="true"
+    :zoomable="true"
+/>
 ```
 
 ```js
@@ -64,6 +77,60 @@ export default {
 或者给组件传入focus属性，值是要展示的点位在datas内的索引。  
 如果不通过任何方式指定要展示的点位会直接取第一个。  
 
+### mode
+
+新版布局模式，可选：
+
+- `overview`：完整总览；
+- `responsive`：完整总览并随容器宽度重新计算，推荐普通 Web 和手机使用；
+- `focus`：使用 1024 × 896 内部画布展示点位附近区域。
+
+未传入 `mode` 时继续读取旧的 `overview`，旧调用无需迁移。
+
+### locale / messages / translator / labels
+
+组件内置 `zh-CN`、`zh-TW`、`en-US`、`vi` 四语言，并统一回退到 `zh-CN`。
+
+```html
+<jx3box-map locale="en-US" />
+```
+
+`locale` 未传入时会读取宿主 `vue-i18n` 的当前 locale，再读取 `<html lang>`。
+
+可以通过 `messages` 覆盖内置语言：
+
+```js
+const messages = {
+    "en-US": {
+        loadError: "Custom map error",
+    },
+};
+```
+
+也可以传入 `translator(key, params, locale)` 对接宿主翻译函数，或通过 `labels` 直接覆盖单个固定文案。组件固定词条位于 `jx3boxMap` 命名空间；地图名、NPC、点位标题和说明仍由业务数据提供。
+
+### trim-border / trim-ratio
+
+`trim-border` 用于裁去地图图片上下透明边，默认关闭；`trim-ratio` 默认 `0.05`。裁边在公共组件内部完成，宿主不需要监听 `resize` 后反向修改轮播高度。
+
+### zoomable / wheel-zoom
+
+- `zoomable`：是否允许缩放；
+- `wheel-zoom`：是否允许鼠标滚轮缩放，只有同时启用 `zoomable` 才生效；
+
+普通总览地图的滚轮缩放默认关闭，避免地图阻断页面正常滚动。为兼容旧版地图工具，启用 `map-draggable` 的焦点地图继续保留滚轮和双指缩放；业务也可以通过 `zoomable / wheel-zoom` 显式控制。
+
+### aspect-ratio
+
+响应式总览比例，默认 `1024 / 896`。容器宽度变化由 `ResizeObserver` 监听，同一帧内合并测量，并且只有尺寸实际改变时才触发 `resize`。
+
+### map-label / point-label-key
+
+用于无障碍名称和点位交互：
+
+- `map-label`：地图区域与图片替代文本；
+- `point-label-key`：点位对象中作为可访问名称的字段，默认 `title`。
+
 ### map-draggable
 
 是否允许用户拖动地图，仅在overview为false时生效。  
@@ -78,11 +145,6 @@ export default {
 ### map-follow
 
 用户拖拽点位之后是否让地图跟随被拖拽的点居中。
-
-### trim-border
-
-是否移除地图边框。  
-西山居的中地图图片是有边框的，默认不展示边框，如果需要展示可以设为`true`
 
 ### show-toolbar
 
@@ -108,6 +170,23 @@ export default {
 ### point-move
 
 用户拖拽点位之后触发
+
+### resize
+
+容器尺寸实际变化后触发，保持兼容数组参数：`[width, height]`。
+
+### error
+
+比例数据或地图图片加载失败时触发：
+
+```js
+{
+    type: "scales" | "image",
+    error,
+}
+```
+
+原有 `sub-switch` 保持不变。
 
 ## 方法
 
@@ -139,3 +218,15 @@ export default {
 #### popover
 
 如果使用默认的point，可以用popover这个slot来替换的默认的popover里的内容  
+
+### error
+
+替换默认错误状态，插槽参数为 `{ error, retry }`。
+
+## 响应式建议
+
+- 桌面焦点浏览使用 `mode="focus"` 并给宿主容器明确高度；
+- 平板和手机使用 `mode="responsive"`；
+- 手机触控按钮按 `720px` 断点增大，页面不会产生横向滚动；
+- 组件遵循 `prefers-reduced-motion`；
+- 宿主应设置 `min-width: 0`，不要再覆盖 `.c-map__inner` 等内部结构。
