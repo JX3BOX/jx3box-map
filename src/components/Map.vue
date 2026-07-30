@@ -311,7 +311,7 @@ export default {
             if (this.focus != undefined) {
                 return this.datas[this.focus];
             }
-            return this.datas.find((d) => d.focus) ?? null;
+            return this.datas.find((d) => d.focus) ?? this.datas[0] ?? null;
         },
         // 内层容器相对外层容器偏移
         innerStyle() {
@@ -419,6 +419,12 @@ export default {
         },
         centerPoint(newVal, oldVal) {
             if (this.isSamePoint(newVal, oldVal)) return;
+            this.$nextTick(() => {
+                this.initInnerOffset(this.focusPoint);
+            });
+        },
+        datas() {
+            if (this.effectiveOverview) return;
             this.$nextTick(() => {
                 this.initInnerOffset(this.focusPoint);
             });
